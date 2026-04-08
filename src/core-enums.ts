@@ -37,8 +37,16 @@ export const AXIS_ID_CATEGORY_PRIMARY = '2094734554'
 export const AXIS_ID_CATEGORY_SECONDARY = '2094734555'
 export const AXIS_ID_SERIES_PRIMARY = '2094734556'
 
-export type JSZIP_OUTPUT_TYPE = 'arraybuffer' | 'base64' | 'binarystring' | 'blob' | 'nodebuffer' | 'uint8array'
+export type JSZIP_OUTPUT_TYPE = 'arraybuffer' | 'base64' | 'binarystring' | 'blob' | 'nodebuffer' | 'uint8array' // kept for back-compat
 export type WRITE_OUTPUT_TYPE = JSZIP_OUTPUT_TYPE | 'STREAM'
+
+// Transition types
+export type TransitionType = 'fade' | 'push' | 'wipe' | 'split' | 'reveal' | 'cover' | 'zoom' | 'morph'
+export type MorphOption = 'byObject' | 'byWord' | 'byChar'
+
+// Animation types
+export type AnimationEffect = 'fadeIn' | 'fadeOut' | 'wipeFromBottom' | 'wipeFromTop' | 'wipeFromLeft' | 'wipeFromRight' | 'riseUp' | 'flyInFromLeft' | 'flyInFromRight' | 'pulse' | 'buildSequence'
+export type AnimationTrigger = 'onClick' | 'withPrevious' | 'afterPrevious'
 export type CHART_NAME = 'area' | 'bar' | 'bar3D' | 'bubble' | 'bubble3D' | 'doughnut' | 'line' | 'pie' | 'radar' | 'scatter'
 export type SCHEME_COLORS = 'tx1' | 'tx2' | 'bg1' | 'bg2' | 'accent1' | 'accent2' | 'accent3' | 'accent4' | 'accent5' | 'accent6'
 

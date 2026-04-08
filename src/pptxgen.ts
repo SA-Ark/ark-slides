@@ -59,7 +59,7 @@
  * @see https://docs.microsoft.com/en-us/previous-versions/office/developer/office-2010/hh273476(v=office.14)
  */
 
-import JSZip from 'jszip'
+import { zipSync, strToU8, Zippable } from 'fflate'
 import Slide from './slide'
 import {
 	AlignH,
@@ -98,7 +98,7 @@ import * as genMedia from './gen-media'
 import * as genTable from './gen-tables'
 import * as genXml from './gen-xml'
 
-const VERSION = '4.0.1'
+const VERSION = '5.0.0-alpha.1'
 
 export default class PptxGenJS implements IPresentationProps {
 	// Property getters/setters
@@ -418,11 +418,11 @@ export default class PptxGenJS implements IPresentationProps {
 	/**
 	 * Create all chart and media rels for this Presentation
 	 * @param {PresSlide | SlideLayout} slide - slide with rels
-	 * @param {JSZip} zip - JSZip instance
+	 * @param {Record<string, Uint8Array>} zipData - fflate zip data object
 	 * @param {Promise<string>[]} chartPromises - promise array
 	 */
-	private readonly createChartMediaRels = (slide: PresSlide | SlideLayout, zip: JSZip, chartPromises: Promise<string>[]): void => {
-		slide._relsChart.forEach(rel => chartPromises.push(genCharts.createExcelWorksheet(rel, zip)))
+	private readonly createChartMediaRels = (slide: PresSlide | SlideLayout, zipData: Record<string, Uint8Array>, chartPromises: Promise<string>[]): void => {
+		slide._relsChart.forEach(rel => chartPromises.push(genCharts.createExcelWorksheet(rel, zipData)))
 		slide._relsMedia.forEach(rel => {
 			if (rel.type !== 'online' && rel.type !== 'hyperlink') {
 				// A: Loop vars
@@ -434,7 +434,12 @@ export default class PptxGenJS implements IPresentationProps {
 				else if (!data.includes(';')) data = 'image/png;' + data
 
 				// C: Add media
-				zip.file(rel.Target.replace('..', 'ppt'), data.split(',').pop(), { base64: true })
+				const filePath = rel.Target.replace('..', 'ppt')
+				const base64Data = data.split(',').pop()
+				const binaryStr = atob(base64Data)
+				const bytes = new Uint8Array(binaryStr.length)
+				for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+				zipData[filePath] = bytes
 			}
 		})
 	}
@@ -479,7 +484,12 @@ export default class PptxGenJS implements IPresentationProps {
 	private readonly exportPresentation = async (props: WriteProps): Promise<string | ArrayBuffer | Blob | Buffer | Uint8Array> => {
 		const arrChartPromises: Promise<string>[] = []
 		let arrMediaPromises: Promise<string>[] = []
-		const zip = new JSZip()
+		const zipData: Record<string, Uint8Array> = {}
+
+		/** Helper: add a string as a UTF-8 file entry */
+		const addFile = (path: string, content: string): void => {
+			zipData[path] = strToU8(content)
+		}
 
 		// STEP 1: Read/Encode all Media before zip as base64 content, etc. is required
 		this.slides.forEach(slide => {
@@ -497,67 +507,67 @@ export default class PptxGenJS implements IPresentationProps {
 				if (slide._slideLayout) genObj.addPlaceholdersToSlideLayouts(slide)
 			})
 
-			// B: Add all required folders and files
-			zip.folder('_rels')
-			zip.folder('docProps')
-			zip.folder('ppt').folder('_rels')
-			zip.folder('ppt/charts').folder('_rels')
-			zip.folder('ppt/embeddings')
-			zip.folder('ppt/media')
-			zip.folder('ppt/slideLayouts').folder('_rels')
-			zip.folder('ppt/slideMasters').folder('_rels')
-			zip.folder('ppt/slides').folder('_rels')
-			zip.folder('ppt/theme')
-			zip.folder('ppt/notesMasters').folder('_rels')
-			zip.folder('ppt/notesSlides').folder('_rels')
-			zip.file('[Content_Types].xml', genXml.makeXmlContTypes(this.slides, this.slideLayouts, this.masterSlide)) // TODO: pass only `this` like below! 20200206
-			zip.file('_rels/.rels', genXml.makeXmlRootRels())
-			zip.file('docProps/app.xml', genXml.makeXmlApp(this.slides, this.company)) // TODO: pass only `this` like below! 20200206
-			zip.file('docProps/core.xml', genXml.makeXmlCore(this.title, this.subject, this.author, this.revision)) // TODO: pass only `this` like below! 20200206
-			zip.file('ppt/_rels/presentation.xml.rels', genXml.makeXmlPresentationRels(this.slides))
-			zip.file('ppt/theme/theme1.xml', genXml.makeXmlTheme(this))
-			zip.file('ppt/presentation.xml', genXml.makeXmlPresentation(this))
-			zip.file('ppt/presProps.xml', genXml.makeXmlPresProps())
-			zip.file('ppt/tableStyles.xml', genXml.makeXmlTableStyles())
-			zip.file('ppt/viewProps.xml', genXml.makeXmlViewProps())
+			// B: Add all required files (fflate creates folders implicitly from paths)
+			addFile('[Content_Types].xml', genXml.makeXmlContTypes(this.slides, this.slideLayouts, this.masterSlide))
+			addFile('_rels/.rels', genXml.makeXmlRootRels())
+			addFile('docProps/app.xml', genXml.makeXmlApp(this.slides, this.company))
+			addFile('docProps/core.xml', genXml.makeXmlCore(this.title, this.subject, this.author, this.revision))
+			addFile('ppt/_rels/presentation.xml.rels', genXml.makeXmlPresentationRels(this.slides))
+			addFile('ppt/theme/theme1.xml', genXml.makeXmlTheme(this))
+			addFile('ppt/presentation.xml', genXml.makeXmlPresentation(this))
+			addFile('ppt/presProps.xml', genXml.makeXmlPresProps())
+			addFile('ppt/tableStyles.xml', genXml.makeXmlTableStyles())
+			addFile('ppt/viewProps.xml', genXml.makeXmlViewProps())
 
 			// C: Create a Layout/Master/Rel/Slide file for each SlideLayout and Slide
 			this.slideLayouts.forEach((layout, idx) => {
-				zip.file(`ppt/slideLayouts/slideLayout${idx + 1}.xml`, genXml.makeXmlLayout(layout))
-				zip.file(`ppt/slideLayouts/_rels/slideLayout${idx + 1}.xml.rels`, genXml.makeXmlSlideLayoutRel(idx + 1, this.slideLayouts))
+				addFile(`ppt/slideLayouts/slideLayout${idx + 1}.xml`, genXml.makeXmlLayout(layout))
+				addFile(`ppt/slideLayouts/_rels/slideLayout${idx + 1}.xml.rels`, genXml.makeXmlSlideLayoutRel(idx + 1, this.slideLayouts))
 			})
 			this.slides.forEach((slide, idx) => {
-				zip.file(`ppt/slides/slide${idx + 1}.xml`, genXml.makeXmlSlide(slide))
-				zip.file(`ppt/slides/_rels/slide${idx + 1}.xml.rels`, genXml.makeXmlSlideRel(this.slides, this.slideLayouts, idx + 1))
-				// Create all slide notes related items. Notes of empty strings are created for slides which do not have notes specified, to keep track of _rels.
-				zip.file(`ppt/notesSlides/notesSlide${idx + 1}.xml`, genXml.makeXmlNotesSlide(slide))
-				zip.file(`ppt/notesSlides/_rels/notesSlide${idx + 1}.xml.rels`, genXml.makeXmlNotesSlideRel(idx + 1))
+				addFile(`ppt/slides/slide${idx + 1}.xml`, genXml.makeXmlSlide(slide))
+				addFile(`ppt/slides/_rels/slide${idx + 1}.xml.rels`, genXml.makeXmlSlideRel(this.slides, this.slideLayouts, idx + 1))
+				addFile(`ppt/notesSlides/notesSlide${idx + 1}.xml`, genXml.makeXmlNotesSlide(slide))
+				addFile(`ppt/notesSlides/_rels/notesSlide${idx + 1}.xml.rels`, genXml.makeXmlNotesSlideRel(idx + 1))
 			})
-			zip.file('ppt/slideMasters/slideMaster1.xml', genXml.makeXmlMaster(this.masterSlide, this.slideLayouts))
-			zip.file('ppt/slideMasters/_rels/slideMaster1.xml.rels', genXml.makeXmlMasterRel(this.masterSlide, this.slideLayouts))
-			zip.file('ppt/notesMasters/notesMaster1.xml', genXml.makeXmlNotesMaster())
-			zip.file('ppt/notesMasters/_rels/notesMaster1.xml.rels', genXml.makeXmlNotesMasterRel())
+			addFile('ppt/slideMasters/slideMaster1.xml', genXml.makeXmlMaster(this.masterSlide, this.slideLayouts))
+			addFile('ppt/slideMasters/_rels/slideMaster1.xml.rels', genXml.makeXmlMasterRel(this.masterSlide, this.slideLayouts))
+			addFile('ppt/notesMasters/notesMaster1.xml', genXml.makeXmlNotesMaster())
+			addFile('ppt/notesMasters/_rels/notesMaster1.xml.rels', genXml.makeXmlNotesMasterRel())
 
 			// D: Create all Rels (images, media, chart data)
 			this.slideLayouts.forEach(layout => {
-				this.createChartMediaRels(layout, zip, arrChartPromises)
+				this.createChartMediaRels(layout, zipData, arrChartPromises)
 			})
 			this.slides.forEach(slide => {
-				this.createChartMediaRels(slide, zip, arrChartPromises)
+				this.createChartMediaRels(slide, zipData, arrChartPromises)
 			})
-			this.createChartMediaRels(this.masterSlide, zip, arrChartPromises)
+			this.createChartMediaRels(this.masterSlide, zipData, arrChartPromises)
 
 			// E: Wait for Promises (if any) then generate the PPTX file
 			return await Promise.all(arrChartPromises).then(async () => {
-				if (props.outputType === 'STREAM') {
-					// A: stream file
-					return await zip.generateAsync({ type: 'nodebuffer', compression: props.compression ? 'DEFLATE' : 'STORE' })
-				} else if (props.outputType) {
-					// B: Node [fs]: Output type user option or default
-					return await zip.generateAsync({ type: props.outputType })
+				// Build Zippable with compression enabled by default
+				const zippable: Zippable = {}
+				for (const [path, data] of Object.entries(zipData)) {
+					zippable[path] = [data, { level: 6 }]
+				}
+				const zipped = zipSync(zippable)
+
+				if (props.outputType === 'STREAM' || props.outputType === 'nodebuffer') {
+					return Buffer.from(zipped)
+				} else if (props.outputType === 'base64') {
+					return Buffer.from(zipped).toString('base64')
+				} else if (props.outputType === 'arraybuffer') {
+					return zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength) as ArrayBuffer
+				} else if (props.outputType === 'uint8array') {
+					return zipped
+				} else if (props.outputType === 'binarystring') {
+					let str = ''
+					for (let i = 0; i < zipped.length; i++) str += String.fromCharCode(zipped[i])
+					return str
 				} else {
-					// C: Browser: Output blob as app/ms-pptx
-					return await zip.generateAsync({ type: 'blob', compression: props.compression ? 'DEFLATE' : 'STORE' })
+					// Default: blob (browser)
+					return new Blob([zipped], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' })
 				}
 			})
 		})

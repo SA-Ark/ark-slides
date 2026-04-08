@@ -30,6 +30,9 @@ import {
 	TableCellProps,
 	TextProps,
 	TextPropsOptions,
+	SlideTransitionProps,
+	AnimationProps,
+	GradientFillProps,
 } from './core-interfaces'
 import {
 	convertRotationDegrees,
@@ -501,8 +504,12 @@ function slideObjectToXml (slide: PresSlide | SlideLayout): string {
 					strSlideXml += '</a:avLst></a:prstGeom>'
 				}
 
-				// Option: FILL
-				strSlideXml += slideItemObj.options.fill ? genXmlColorSelection(slideItemObj.options.fill) : '<a:noFill/>'
+				// Option: FILL (gradient fill takes precedence)
+				if (slideItemObj.options.gradientFill) {
+					strSlideXml += makeGradientFillXml(slideItemObj.options.gradientFill)
+				} else {
+					strSlideXml += slideItemObj.options.fill ? genXmlColorSelection(slideItemObj.options.fill) : '<a:noFill/>'
+				}
 
 				// shape Type: LINE: line color
 				if (slideItemObj.options.line) {
@@ -1552,19 +1559,193 @@ export function makeXmlPresentationRels (slides: PresSlide[]): string {
 // XML-GEN: Functions that run 1-N times (once for each Slide)
 
 /**
+ * Generate transition XML for a slide
+ */
+function makeTransitionXml (transition: SlideTransitionProps): string {
+	const dur = transition.duration != null ? transition.duration : 1000
+	const advTm = ` advTm="${dur}"`
+	const spd = dur <= 500 ? 'fast' : dur >= 1500 ? 'slow' : 'med'
+
+	switch (transition.type) {
+		case 'fade':
+			return `<p:transition spd="${spd}"${advTm}><p:fade/></p:transition>`
+		case 'push':
+			return `<p:transition spd="${spd}"${advTm}><p:push dir="${transition.dir || 'r'}"/></p:transition>`
+		case 'wipe':
+			return `<p:transition spd="${spd}"${advTm}><p:wipe dir="${transition.dir || 'r'}"/></p:transition>`
+		case 'split':
+			return `<p:transition spd="${spd}"${advTm}><p:split dir="out" orient="horz"/></p:transition>`
+		case 'reveal':
+			return `<p:transition spd="${spd}"${advTm}><p:reveal dir="${transition.dir || 'r'}"/></p:transition>`
+		case 'cover':
+			return `<p:transition spd="${spd}"${advTm}><p:cover dir="${transition.dir || 'r'}"/></p:transition>`
+		case 'zoom':
+			return `<p:transition spd="${spd}"${advTm}><p:zoom dir="out"/></p:transition>`
+		case 'morph': {
+			const opt = transition.option || 'byObject'
+			const optVal = opt === 'byWord' ? 'words' : opt === 'byChar' ? 'chars' : 'obj'
+			return (
+				`<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">` +
+				`<mc:Choice Requires="p14">` +
+				`<p:transition spd="${spd}"${advTm} xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main">` +
+				`<p14:morph option="${optVal}"/>` +
+				`</p:transition>` +
+				`</mc:Choice>` +
+				`<mc:Fallback>` +
+				`<p:transition spd="${spd}"${advTm}><p:fade/></p:transition>` +
+				`</mc:Fallback>` +
+				`</mc:AlternateContent>`
+			)
+		}
+		default:
+			return ''
+	}
+}
+
+/**
+ * Animation preset mapping
+ */
+const ANIMATION_PRESETS: Record<string, { presetID: number, presetClass: string, presetSubtype: number }> = {
+	fadeIn: { presetID: 10, presetClass: 'entr', presetSubtype: 0 },
+	fadeOut: { presetID: 10, presetClass: 'exit', presetSubtype: 0 },
+	wipeFromBottom: { presetID: 22, presetClass: 'entr', presetSubtype: 4 },
+	wipeFromTop: { presetID: 22, presetClass: 'entr', presetSubtype: 1 },
+	wipeFromLeft: { presetID: 22, presetClass: 'entr', presetSubtype: 8 },
+	wipeFromRight: { presetID: 22, presetClass: 'entr', presetSubtype: 2 },
+	riseUp: { presetID: 2, presetClass: 'entr', presetSubtype: 4 },
+	flyInFromLeft: { presetID: 2, presetClass: 'entr', presetSubtype: 8 },
+	flyInFromRight: { presetID: 2, presetClass: 'entr', presetSubtype: 2 },
+	pulse: { presetID: 26, presetClass: 'emph', presetSubtype: 0 },
+}
+
+/**
+ * Generate timing/animation XML for a slide
+ */
+function makeTimingXml (slide: PresSlide): string {
+	if (!slide._slideObjects || slide._slideObjects.length === 0) return ''
+
+	const animatedObjects = slide._slideObjects
+		.map((obj, idx) => ({ obj, idx }))
+		.filter(item => item.obj.options?.animation)
+
+	if (animatedObjects.length === 0) return ''
+
+	let strXml = '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>'
+
+	let tnId = 2
+	animatedObjects.forEach((item, animIdx) => {
+		const anim: AnimationProps = item.obj.options.animation
+		const preset = anim.effect === 'buildSequence'
+			? { presetID: 10, presetClass: 'entr', presetSubtype: 0 }
+			: ANIMATION_PRESETS[anim.effect]
+		if (!preset) return
+
+		const dur = anim.duration ?? 500
+		const delay = anim.delay ?? 0
+		const trigger = anim.trigger || 'onClick'
+
+		// Each animation is a <p:par> with trigger condition
+		const triggerDelay = trigger === 'onClick' ? '0' : trigger === 'withPrevious' ? '0' : String(delay)
+		const triggerEvt = trigger === 'onClick' ? 'onClick' : trigger === 'withPrevious' ? 'begin' : 'end'
+		// Shape target is idx+2 (1-based, +1 for the group shape)
+		const spTgt = item.idx + 2
+
+		strXml += '<p:par>'
+		strXml += `<p:cTn id="${tnId++}" fill="hold">`
+		strXml += '<p:stCondLst>'
+		if (trigger === 'onClick') {
+			strXml += `<p:cond delay="${triggerDelay}"/>`
+		} else if (trigger === 'withPrevious') {
+			strXml += `<p:cond delay="${delay}"/>`
+		} else {
+			strXml += `<p:cond delay="${delay}"/>`
+		}
+		strXml += '</p:stCondLst>'
+		strXml += '<p:childTnLst>'
+		strXml += '<p:par>'
+		strXml += `<p:cTn id="${tnId++}" presetID="${preset.presetID}" presetClass="${preset.presetClass}" presetSubtype="${preset.presetSubtype}" fill="hold">`
+		strXml += `<p:stCondLst><p:cond delay="${delay}"/></p:stCondLst>`
+		strXml += '<p:childTnLst>'
+
+		if (preset.presetClass === 'entr' || preset.presetClass === 'exit') {
+			// Set effect with animEffect
+			strXml += `<p:set><p:cBhvr><p:cTn id="${tnId++}" dur="1" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn>`
+			strXml += `<p:tgtEl><p:spTgt spid="${spTgt}"/></p:tgtEl>`
+			strXml += `<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr>`
+			strXml += `<p:to><p:strVal val="visible"/></p:to></p:set>`
+			strXml += `<p:animEffect transition="${preset.presetClass === 'entr' ? 'in' : 'out'}" filter="fade">`
+			strXml += `<p:cBhvr><p:cTn id="${tnId++}" dur="${dur}"/>`
+			strXml += `<p:tgtEl><p:spTgt spid="${spTgt}"/></p:tgtEl></p:cBhvr></p:animEffect>`
+		} else {
+			// Emphasis (pulse etc.)
+			strXml += `<p:animScale><p:cBhvr><p:cTn id="${tnId++}" dur="${dur}" autoRev="1"/>`
+			strXml += `<p:tgtEl><p:spTgt spid="${spTgt}"/></p:tgtEl></p:cBhvr>`
+			strXml += '<p:by x="110000" y="110000"/></p:animScale>'
+		}
+
+		strXml += '</p:childTnLst>'
+		strXml += '</p:cTn>'
+		strXml += '</p:par>'
+		strXml += '</p:childTnLst>'
+		strXml += '</p:cTn>'
+		strXml += '</p:par>'
+	})
+
+	strXml += '</p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>'
+	return strXml
+}
+
+/**
+ * Generate gradient fill XML
+ */
+export function makeGradientFillXml (gradFill: GradientFillProps): string {
+	let strXml = '<a:gradFill>'
+	strXml += '<a:gsLst>'
+	gradFill.stops.forEach(stop => {
+		const pos = Math.round(stop.position * 1000) // 0-100000
+		strXml += `<a:gs pos="${pos}">`
+		const transparency = stop.transparency ? `<a:alpha val="${Math.round((100 - stop.transparency) * 1000)}"/>` : ''
+		strXml += createColorElement(stop.color, transparency)
+		strXml += '</a:gs>'
+	})
+	strXml += '</a:gsLst>'
+
+	if (gradFill.type === 'linear') {
+		const angle = Math.round((gradFill.angle || 0) * 60000)
+		strXml += `<a:lin ang="${angle}" scaled="0"/>`
+	} else if (gradFill.type === 'radial' || gradFill.type === 'path') {
+		strXml += `<a:path path="${gradFill.type === 'radial' ? 'circle' : 'rect'}"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path>`
+	}
+
+	strXml += '</a:gradFill>'
+	return strXml
+}
+
+/**
  * Generates XML for the slide file (`ppt/slides/slide1.xml`)
  * @param {PresSlide} slide - the slide object to transform into XML
  * @return {string} XML
  */
 export function makeXmlSlide (slide: PresSlide): string {
-	return (
+	let strXml =
 		`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${CRLF}` +
 		'<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
 		'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"' +
 		`${slide?.hidden ? ' show="0"' : ''}>` +
 		`${slideObjectToXml(slide)}` +
-		'<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>'
-	)
+		'<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>'
+
+	// Add transition XML if present
+	if (slide.transition) {
+		strXml += makeTransitionXml(slide.transition)
+	}
+
+	// Add timing/animation XML if any objects have animations
+	const animXml = makeTimingXml(slide)
+	if (animXml) strXml += animXml
+
+	strXml += '</p:sld>'
+	return strXml
 }
 
 /**

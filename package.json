@@ -1,6 +1,6 @@
 {
-	"name": "pptxgenjs",
-	"version": "4.0.1",
+	"name": "@ark/slides",
+	"version": "5.0.0-alpha.1",
 	"author": {
 		"name": "Brent Ely",
 		"url": "https://github.com/gitbrent/"
@@ -25,7 +25,8 @@
 		"start": "gulp",
 		"ship": "gulp ship",
 		"defs": "gulp reactTestDefs",
-		"watch": "rollup -cw"
+		"watch": "rollup -cw",
+		"test": "node test/test.mjs"
 	},
 	"browser": {
 		"express": false,
@@ -39,9 +40,9 @@
 	},
 	"dependencies": {
 		"@types/node": "^22.8.1",
+		"fflate": "^0.8.2",
 		"https": "^1.0.0",
-		"image-size": "^1.2.1",
-		"jszip": "^3.10.1"
+		"image-size": "^1.2.1"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.25.1",

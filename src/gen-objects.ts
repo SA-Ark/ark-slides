@@ -383,6 +383,7 @@ export function addChartDefinition(target: PresSlide, type: CHART_NAME | IChartM
  * @see: https://stackoverflow.com/questions/164181/how-to-fetch-a-remote-image-to-display-in-a-canvas)
  */
 export function addImageDefinition(target: PresSlide, opt: ImageProps): void {
+	const imgOpt = { ...opt }
 	const newObject: ISlideObject = {
 		_type: null,
 		text: null,
@@ -667,7 +668,8 @@ export function addNotesDefinition(target: PresSlide, notes: string): void {
  * @param {ShapeProps} opts shape options
  */
 export function addShapeDefinition(target: PresSlide, shapeName: SHAPE_NAME, opts: ShapeProps): void {
-	const options = typeof opts === 'object' ? opts : {}
+	const options = typeof opts === 'object' ? { ...opts } : {}
+	if (options.line) options.line = { ...options.line }
 	options.line = options.line || { type: 'none' }
 	const newObject: ISlideObject = {
 		_type: SLIDE_OBJECT_TYPES.text,
@@ -998,11 +1000,12 @@ export function addTableDefinition(
  * @since: 1.0.0
  */
 export function addTextDefinition(target: PresSlide, text: TextProps[], opts: TextPropsOptions, isPlaceholder: boolean): void {
+	const clonedOpts = opts ? { ...opts } : {}
 	const newObject: ISlideObject = {
 		_type: isPlaceholder ? SLIDE_OBJECT_TYPES.placeholder : SLIDE_OBJECT_TYPES.text,
-		shape: (opts?.shape) || SHAPE_TYPE.RECTANGLE,
+		shape: (clonedOpts?.shape) || SHAPE_TYPE.RECTANGLE,
 		text: !text || text.length === 0 ? [{ text: '', options: null }] : text,
-		options: opts || {},
+		options: clonedOpts,
 	}
 
 	function cleanOpts(itemOpts: ObjectOptions): TextPropsOptions {

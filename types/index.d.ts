@@ -1,4 +1,4 @@
-// Type definitions for pptxgenjs 4.0.1
+// Type definitions for @ark/slides 5.0.0-alpha.1
 // Project: https://gitbrent.github.io/PptxGenJS/
 // Definitions by: Brent Ely <https://github.com/gitbrent/>
 //                 Michael Beaumont <https://github.com/michaelbeaumont>
@@ -1519,6 +1519,8 @@ declare namespace PptxGenJS {
 		 * TODO: need new demo.js entry for shape shadow
 		 */
 		shadow?: ShadowProps
+		animation?: AnimationProps
+		gradientFill?: GradientFillProps
 
 		/**
 		 * @deprecated v3.3.0
@@ -1884,6 +1886,8 @@ declare namespace PptxGenJS {
 		rtlMode?: boolean
 		shadow?: ShadowProps
 		shape?: SHAPE_NAME
+		animation?: AnimationProps
+		gradientFill?: GradientFillProps
 		strike?: boolean | 'dblStrike' | 'sngStrike'
 		subscript?: boolean
 		superscript?: boolean
@@ -2675,5 +2679,43 @@ declare namespace PptxGenJS {
 		 * @deprecated in 3.3.0 - use `background` instead
 		 */
 		bkgd: string
+
+		/**
+		 * Slide transition effect
+		 * @since v5.0.0
+		 */
+		transition: SlideTransitionProps
+	}
+
+	// v5.0.0 new types
+	type TransitionType = 'fade' | 'push' | 'wipe' | 'split' | 'reveal' | 'cover' | 'zoom' | 'morph'
+	type MorphOption = 'byObject' | 'byWord' | 'byChar'
+	type AnimationEffect = 'fadeIn' | 'fadeOut' | 'wipeFromBottom' | 'wipeFromTop' | 'wipeFromLeft' | 'wipeFromRight' | 'riseUp' | 'flyInFromLeft' | 'flyInFromRight' | 'pulse' | 'buildSequence'
+	type AnimationTrigger = 'onClick' | 'withPrevious' | 'afterPrevious'
+
+	interface SlideTransitionProps {
+		type: TransitionType
+		duration?: number
+		dir?: 'l' | 'r' | 'u' | 'd'
+		option?: MorphOption
+	}
+
+	interface AnimationProps {
+		effect: AnimationEffect
+		trigger?: AnimationTrigger
+		duration?: number
+		delay?: number
+	}
+
+	interface GradientStop {
+		position: number
+		color: string
+		transparency?: number
+	}
+
+	interface GradientFillProps {
+		type: 'linear' | 'radial' | 'path'
+		angle?: number
+		stops: GradientStop[]
 	}
 }

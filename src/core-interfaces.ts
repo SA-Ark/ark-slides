@@ -3,7 +3,7 @@
  * PptxGenJS Interfaces
  */
 
-import { CHART_NAME, PLACEHOLDER_TYPE, SHAPE_NAME, SLIDE_OBJECT_TYPES, TEXT_HALIGN, TEXT_VALIGN, WRITE_OUTPUT_TYPE } from './core-enums'
+import { CHART_NAME, PLACEHOLDER_TYPE, SHAPE_NAME, SLIDE_OBJECT_TYPES, TEXT_HALIGN, TEXT_VALIGN, WRITE_OUTPUT_TYPE, TransitionType, MorphOption, AnimationEffect, AnimationTrigger } from './core-enums'
 
 // Core Types
 // ==========
@@ -691,6 +691,16 @@ export interface ShapeProps extends PositionProps, ObjectNameProps {
 	 * TODO: need new demo.js entry for shape shadow
 	 */
 	shadow?: ShadowProps
+	/**
+	 * Animation effect for this shape
+	 * @since v5.0.0
+	 */
+	animation?: AnimationProps
+	/**
+	 * Gradient fill (overrides `fill` when set)
+	 * @since v5.0.0
+	 */
+	gradientFill?: GradientFillProps
 
 	/**
 	 * @deprecated v3.3.0
@@ -1082,6 +1092,16 @@ export interface TextPropsOptions extends PositionProps, DataOrPathProps, TextBa
 	rtlMode?: boolean
 	shadow?: ShadowProps
 	shape?: SHAPE_NAME
+	/**
+	 * Animation effect for this text shape
+	 * @since v5.0.0
+	 */
+	animation?: AnimationProps
+	/**
+	 * Gradient fill (overrides `fill` when set)
+	 * @since v5.0.0
+	 */
+	gradientFill?: GradientFillProps
 	strike?: boolean | 'dblStrike' | 'sngStrike'
 	subscript?: boolean
 	superscript?: boolean
@@ -1838,6 +1858,11 @@ export interface PresSlide extends SlideBaseProps {
 	 */
 	hidden?: boolean
 	/**
+	 * Slide transition effect
+	 * @since v5.0.0
+	 */
+	transition?: SlideTransitionProps
+	/**
 	 * Slide number options
 	 */
 	slideNumber?: SlideNumberProps
@@ -1871,4 +1896,44 @@ export interface IPresentationProps extends PresentationProps {
 	sections: SectionProps[]
 	slideLayouts: SlideLayout[]
 	slides: PresSlide[]
+}
+
+// Transition support
+export interface SlideTransitionProps {
+	type: TransitionType
+	/** Duration in milliseconds @default 1000 */
+	duration?: number
+	/** Direction for directional transitions @default 'r' */
+	dir?: 'l' | 'r' | 'u' | 'd'
+	/** Morph option (only for type='morph') @default 'byObject' */
+	option?: MorphOption
+}
+
+// Animation support
+export interface AnimationProps {
+	effect: AnimationEffect
+	/** Trigger type @default 'onClick' */
+	trigger?: AnimationTrigger
+	/** Duration in milliseconds @default 500 */
+	duration?: number
+	/** Delay in milliseconds @default 0 */
+	delay?: number
+}
+
+// Enhanced gradient fill
+export interface GradientStop {
+	/** Position 0-100 */
+	position: number
+	/** Hex color */
+	color: string
+	/** Transparency 0-100 */
+	transparency?: number
+}
+export interface GradientFillProps {
+	/** Gradient type */
+	type: 'linear' | 'radial' | 'path'
+	/** Rotation angle in degrees (for linear) @default 0 */
+	angle?: number
+	/** Gradient stops (2 or more) */
+	stops: GradientStop[]
 }

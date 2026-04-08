@@ -22,6 +22,7 @@ import {
 	ShapeProps,
 	SlideLayout,
 	SlideNumberProps,
+	SlideTransitionProps,
 	TableProps,
 	TableRow,
 	TextProps,
@@ -151,6 +152,20 @@ export default class Slide {
 
 	public get slideNumber(): SlideNumberProps {
 		return this._slideNumberProps
+	}
+
+	/**
+	 * Slide transition effect
+	 * @type {SlideTransitionProps}
+	 * @since v5.0.0
+	 */
+	private _transition: SlideTransitionProps
+	public set transition(value: SlideTransitionProps) {
+		this._transition = value
+	}
+
+	public get transition(): SlideTransitionProps {
+		return this._transition
 	}
 
 	public get newAutoPagedSlides(): PresSlide[] {
