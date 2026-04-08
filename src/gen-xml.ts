@@ -1583,12 +1583,11 @@ function makeTransitionXml (transition: SlideTransitionProps): string {
 			return `<p:transition spd="${spd}"${advTm}><p:zoom dir="out"/></p:transition>`
 		case 'morph': {
 			const opt = transition.option || 'byObject'
-			const optVal = opt === 'byWord' ? 'words' : opt === 'byChar' ? 'chars' : 'obj'
 			return (
 				`<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">` +
-				`<mc:Choice Requires="p14">` +
-				`<p:transition spd="${spd}"${advTm} xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main">` +
-				`<p14:morph option="${optVal}"/>` +
+				`<mc:Choice xmlns:p159="http://schemas.microsoft.com/office/powerpoint/2015/09/main" Requires="p159">` +
+				`<p:transition spd="${spd}"${advTm} xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" p14:dur="${dur}">` +
+				`<p159:morph option="${opt}"/>` +
 				`</p:transition>` +
 				`</mc:Choice>` +
 				`<mc:Fallback>` +
