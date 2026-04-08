@@ -1631,8 +1631,10 @@ function makeTimingXml (slide: PresSlide): string {
 	if (animatedObjects.length === 0) return ''
 
 	let strXml = '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>'
+	// Main sequence container — required for sequential/onClick animations
+	strXml += '<p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>'
 
-	let tnId = 2
+	let tnId = 3
 	animatedObjects.forEach((item, animIdx) => {
 		const anim: AnimationProps = item.obj.options.animation
 		const preset = anim.effect === 'buildSequence'
@@ -1643,27 +1645,25 @@ function makeTimingXml (slide: PresSlide): string {
 		const dur = anim.duration ?? 500
 		const delay = anim.delay ?? 0
 		const trigger = anim.trigger || 'onClick'
-
-		// Each animation is a <p:par> with trigger condition
-		const triggerDelay = trigger === 'onClick' ? '0' : trigger === 'withPrevious' ? '0' : String(delay)
-		const triggerEvt = trigger === 'onClick' ? 'onClick' : trigger === 'withPrevious' ? 'begin' : 'end'
 		// Shape target is idx+2 (1-based, +1 for the group shape)
 		const spTgt = item.idx + 2
 
+		// Each click group is a <p:par> in the mainSeq
 		strXml += '<p:par>'
 		strXml += `<p:cTn id="${tnId++}" fill="hold">`
 		strXml += '<p:stCondLst>'
 		if (trigger === 'onClick') {
-			strXml += `<p:cond delay="${triggerDelay}"/>`
+			strXml += '<p:cond delay="0"/>'
 		} else if (trigger === 'withPrevious') {
 			strXml += `<p:cond delay="${delay}"/>`
 		} else {
+			// afterPrevious — delay after the previous animation ends
 			strXml += `<p:cond delay="${delay}"/>`
 		}
 		strXml += '</p:stCondLst>'
 		strXml += '<p:childTnLst>'
 		strXml += '<p:par>'
-		strXml += `<p:cTn id="${tnId++}" presetID="${preset.presetID}" presetClass="${preset.presetClass}" presetSubtype="${preset.presetSubtype}" fill="hold">`
+		strXml += `<p:cTn id="${tnId++}" presetID="${preset.presetID}" presetClass="${preset.presetClass}" presetSubtype="${preset.presetSubtype}" fill="hold" nodeType="${trigger === 'onClick' ? 'clickEffect' : trigger === 'withPrevious' ? 'withEffect' : 'afterEffect'}">`
 		strXml += `<p:stCondLst><p:cond delay="${delay}"/></p:stCondLst>`
 		strXml += '<p:childTnLst>'
 
@@ -1691,6 +1691,11 @@ function makeTimingXml (slide: PresSlide): string {
 		strXml += '</p:par>'
 	})
 
+	strXml += '</p:childTnLst></p:cTn>'
+	// Sequence prev/next conditions
+	strXml += '<p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst>'
+	strXml += '<p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst>'
+	strXml += '</p:seq>'
 	strXml += '</p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>'
 	return strXml
 }

@@ -1,5 +1,4 @@
-/* PptxGenJS 4.0.1 @ 2025-06-25T23:35:35.098Z */
-import JSZip from 'jszip';
+import { zipSync, strToU8 } from 'fflate';
 
 /******************************************************************************
 Copyright (c) Microsoft Corporation.
@@ -1919,6 +1918,7 @@ function addChartDefinition(target, type, data, opt) {
  * @see: https://stackoverflow.com/questions/164181/how-to-fetch-a-remote-image-to-display-in-a-canvas)
  */
 function addImageDefinition(target, opt) {
+    Object.assign({}, opt);
     const newObject = {
         _type: null,
         text: null,
@@ -2186,7 +2186,9 @@ function addNotesDefinition(target, notes) {
  * @param {ShapeProps} opts shape options
  */
 function addShapeDefinition(target, shapeName, opts) {
-    const options = typeof opts === 'object' ? opts : {};
+    const options = typeof opts === 'object' ? Object.assign({}, opts) : {};
+    if (options.line)
+        options.line = Object.assign({}, options.line);
     options.line = options.line || { type: 'none' };
     const newObject = {
         _type: SLIDE_OBJECT_TYPES.text,
@@ -2511,11 +2513,12 @@ function addTableDefinition(target, tableRows, options, slideLayout, presLayout,
  * @since: 1.0.0
  */
 function addTextDefinition(target, text, opts, isPlaceholder) {
+    const clonedOpts = opts ? Object.assign({}, opts) : {};
     const newObject = {
         _type: isPlaceholder ? SLIDE_OBJECT_TYPES.placeholder : SLIDE_OBJECT_TYPES.text,
-        shape: (opts === null || opts === void 0 ? void 0 : opts.shape) || SHAPE_TYPE.RECTANGLE,
+        shape: (clonedOpts === null || clonedOpts === void 0 ? void 0 : clonedOpts.shape) || SHAPE_TYPE.RECTANGLE,
         text: !text || text.length === 0 ? [{ text: '', options: null }] : text,
-        options: opts || {},
+        options: clonedOpts,
     };
     function cleanOpts(itemOpts) {
         // STEP 1: Set some options
@@ -2817,6 +2820,12 @@ class Slide {
     get slideNumber() {
         return this._slideNumberProps;
     }
+    set transition(value) {
+        this._transition = value;
+    }
+    get transition() {
+        return this._transition;
+    }
     get newAutoPagedSlides() {
         return this._newAutoPagedSlides;
     }
@@ -2908,7 +2917,7 @@ class Slide {
 /**
  * Based on passed data, creates Excel Worksheet that is used as a data source for a chart.
  * @param {ISlideRelChart} chartObject - chart object
- * @param {JSZip} zip - file that the resulting XLSX should be added to
+ * @param {Record<string, Uint8Array>} zip - fflate zip data object
  * @return {Promise} promise of generating the XLSX file
  */
 function createExcelWorksheet(chartObject, zip) {
@@ -2916,20 +2925,15 @@ function createExcelWorksheet(chartObject, zip) {
         const data = chartObject.data;
         return yield new Promise((resolve, reject) => {
             var _a, _b;
-            const zipExcel = new JSZip();
+            const excelFiles = {};
+            const addExcelFile = (path, content) => {
+                excelFiles[path] = strToU8(content);
+            };
             const intBubbleCols = (data.length - 1) * 2 + 1; // 1 for "X-Values", then 2 for every Y-Axis
             const IS_MULTI_CAT_AXES = ((_b = (_a = data[0]) === null || _a === void 0 ? void 0 : _a.labels) === null || _b === void 0 ? void 0 : _b.length) > 1;
-            // A: Add folders
-            zipExcel.folder('_rels');
-            zipExcel.folder('docProps');
-            zipExcel.folder('xl/_rels');
-            zipExcel.folder('xl/tables');
-            zipExcel.folder('xl/theme');
-            zipExcel.folder('xl/worksheets');
-            zipExcel.folder('xl/worksheets/_rels');
             // B: Add core contents
             {
-                zipExcel.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+                addExcelFile('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
                     '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
                     '  <Default Extension="xml" ContentType="application/xml"/>' +
                     '  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
@@ -2941,12 +2945,12 @@ function createExcelWorksheet(chartObject, zip) {
                     '  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
                     '  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>' +
                     '</Types>\n');
-                zipExcel.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+                addExcelFile('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
                     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
                     '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>' +
                     '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
                     '</Relationships>\n');
-                zipExcel.file('docProps/app.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
+                addExcelFile('docProps/app.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
                     '<Application>Microsoft Macintosh Excel</Application>' +
                     '<DocSecurity>0</DocSecurity>' +
                     '<ScaleCrop>false</ScaleCrop>' +
@@ -2954,7 +2958,7 @@ function createExcelWorksheet(chartObject, zip) {
                     '<TitlesOfParts><vt:vector size="1" baseType="lpstr"><vt:lpstr>Sheet1</vt:lpstr></vt:vector></TitlesOfParts>' +
                     '<Company></Company><LinksUpToDate>false</LinksUpToDate><SharedDoc>false</SharedDoc><HyperlinksChanged>false</HyperlinksChanged><AppVersion>16.0300</AppVersion>' +
                     '</Properties>\n');
-                zipExcel.file('docProps/core.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+                addExcelFile('docProps/core.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
                     '<dc:creator>PptxGenJS</dc:creator>' +
                     '<cp:lastModifiedBy>PptxGenJS</cp:lastModifiedBy>' +
                     '<dcterms:created xsi:type="dcterms:W3CDTF">' +
@@ -2964,18 +2968,18 @@ function createExcelWorksheet(chartObject, zip) {
                     new Date().toISOString() +
                     '</dcterms:modified>' +
                     '</cp:coreProperties>');
-                zipExcel.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                addExcelFile('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
                     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
                     '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
                     '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>' +
                     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
                     '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>' +
                     '</Relationships>');
-                zipExcel.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="0" formatCode="General"/></numFmts><fonts count="4"><font><sz val="9"/><color indexed="8"/><name val="Geneva"/></font><font><sz val="9"/><color indexed="8"/><name val="Geneva"/></font><font><sz val="10"/><color indexed="8"/><name val="Geneva"/></font><font><sz val="18"/><color indexed="8"/>' +
+                addExcelFile('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="0" formatCode="General"/></numFmts><fonts count="4"><font><sz val="9"/><color indexed="8"/><name val="Geneva"/></font><font><sz val="9"/><color indexed="8"/><name val="Geneva"/></font><font><sz val="10"/><color indexed="8"/><name val="Geneva"/></font><font><sz val="18"/><color indexed="8"/>' +
                     '<name val="Arial"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><dxfs count="0"/><tableStyles count="0"/><colors><indexedColors><rgbColor rgb="ff000000"/><rgbColor rgb="ffffffff"/><rgbColor rgb="ffff0000"/><rgbColor rgb="ff00ff00"/><rgbColor rgb="ff0000ff"/>' +
                     '<rgbColor rgb="ffffff00"/><rgbColor rgb="ffff00ff"/><rgbColor rgb="ff00ffff"/><rgbColor rgb="ff000000"/><rgbColor rgb="ffffffff"/><rgbColor rgb="ff878787"/><rgbColor rgb="fff9f9f9"/></indexedColors></colors></styleSheet>\n');
-                zipExcel.file('xl/theme/theme1.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Theme"><a:themeElements><a:clrScheme name="Office"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2><a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4><a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="Office"><a:majorFont><a:latin typeface="Calibri Light" panose="020F0302020204030204"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Jpan" typeface="Yu Gothic Light"/><a:font script="Hang" typeface="맑은 고딕"/><a:font script="Hans" typeface="DengXian Light"/><a:font script="Hant" typeface="新細明體"/><a:font script="Arab" typeface="Times New Roman"/><a:font script="Hebr" typeface="Times New Roman"/><a:font script="Thai" typeface="Tahoma"/><a:font script="Ethi" typeface="Nyala"/><a:font script="Beng" typeface="Vrinda"/><a:font script="Gujr" typeface="Shruti"/><a:font script="Khmr" typeface="MoolBoran"/><a:font script="Knda" typeface="Tunga"/><a:font script="Guru" typeface="Raavi"/><a:font script="Cans" typeface="Euphemia"/><a:font script="Cher" typeface="Plantagenet Cherokee"/><a:font script="Yiii" typeface="Microsoft Yi Baiti"/><a:font script="Tibt" typeface="Microsoft Himalaya"/><a:font script="Thaa" typeface="MV Boli"/><a:font script="Deva" typeface="Mangal"/><a:font script="Telu" typeface="Gautami"/><a:font script="Taml" typeface="Latha"/><a:font script="Syrc" typeface="Estrangelo Edessa"/><a:font script="Orya" typeface="Kalinga"/><a:font script="Mlym" typeface="Kartika"/><a:font script="Laoo" typeface="DokChampa"/><a:font script="Sinh" typeface="Iskoola Pota"/><a:font script="Mong" typeface="Mongolian Baiti"/><a:font script="Viet" typeface="Times New Roman"/><a:font script="Uigh" typeface="Microsoft Uighur"/><a:font script="Geor" typeface="Sylfaen"/></a:majorFont><a:minorFont><a:latin typeface="Calibri" panose="020F0502020204030204"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Jpan" typeface="Yu Gothic"/><a:font script="Hang" typeface="맑은 고딕"/><a:font script="Hans" typeface="DengXian"/><a:font script="Hant" typeface="新細明體"/><a:font script="Arab" typeface="Arial"/><a:font script="Hebr" typeface="Arial"/><a:font script="Thai" typeface="Tahoma"/><a:font script="Ethi" typeface="Nyala"/><a:font script="Beng" typeface="Vrinda"/><a:font script="Gujr" typeface="Shruti"/><a:font script="Khmr" typeface="DaunPenh"/><a:font script="Knda" typeface="Tunga"/><a:font script="Guru" typeface="Raavi"/><a:font script="Cans" typeface="Euphemia"/><a:font script="Cher" typeface="Plantagenet Cherokee"/><a:font script="Yiii" typeface="Microsoft Yi Baiti"/><a:font script="Tibt" typeface="Microsoft Himalaya"/><a:font script="Thaa" typeface="MV Boli"/><a:font script="Deva" typeface="Mangal"/><a:font script="Telu" typeface="Gautami"/><a:font script="Taml" typeface="Latha"/><a:font script="Syrc" typeface="Estrangelo Edessa"/><a:font script="Orya" typeface="Kalinga"/><a:font script="Mlym" typeface="Kartika"/><a:font script="Laoo" typeface="DokChampa"/><a:font script="Sinh" typeface="Iskoola Pota"/><a:font script="Mong" typeface="Mongolian Baiti"/><a:font script="Viet" typeface="Arial"/><a:font script="Uigh" typeface="Microsoft Uighur"/><a:font script="Geor" typeface="Sylfaen"/></a:minorFont></a:fontScheme><a:fmtScheme name="Office"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:lumMod val="110000"/><a:satMod val="105000"/><a:tint val="67000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="103000"/><a:tint val="73000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="109000"/><a:tint val="81000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:satMod val="103000"/><a:lumMod val="102000"/><a:tint val="94000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:satMod val="110000"/><a:lumMod val="100000"/><a:shade val="100000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="99000"/><a:satMod val="120000"/><a:shade val="78000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad="57150" dist="19050" dir="5400000" algn="ctr" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="63000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/><a:satMod val="170000"/></a:schemeClr></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="93000"/><a:satMod val="150000"/><a:shade val="98000"/><a:lumMod val="102000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:tint val="98000"/><a:satMod val="130000"/><a:shade val="90000"/><a:lumMod val="103000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="63000"/><a:satMod val="120000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/><a:extLst><a:ext uri="{05A4C25C-085E-4340-85A3-A5531E510DB2}"><thm15:themeFamily xmlns:thm15="http://schemas.microsoft.com/office/thememl/2012/main" name="Office Theme" id="{62F939B6-93AF-4DB8-9C6B-D6C7DFDC589F}" vid="{4A3C46E8-61CC-4603-A589-7422A47A8E4A}"/></a:ext></a:extLst></a:theme>');
-                zipExcel.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                addExcelFile('xl/theme/theme1.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Theme"><a:themeElements><a:clrScheme name="Office"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2><a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4><a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="Office"><a:majorFont><a:latin typeface="Calibri Light" panose="020F0302020204030204"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Jpan" typeface="Yu Gothic Light"/><a:font script="Hang" typeface="맑은 고딕"/><a:font script="Hans" typeface="DengXian Light"/><a:font script="Hant" typeface="新細明體"/><a:font script="Arab" typeface="Times New Roman"/><a:font script="Hebr" typeface="Times New Roman"/><a:font script="Thai" typeface="Tahoma"/><a:font script="Ethi" typeface="Nyala"/><a:font script="Beng" typeface="Vrinda"/><a:font script="Gujr" typeface="Shruti"/><a:font script="Khmr" typeface="MoolBoran"/><a:font script="Knda" typeface="Tunga"/><a:font script="Guru" typeface="Raavi"/><a:font script="Cans" typeface="Euphemia"/><a:font script="Cher" typeface="Plantagenet Cherokee"/><a:font script="Yiii" typeface="Microsoft Yi Baiti"/><a:font script="Tibt" typeface="Microsoft Himalaya"/><a:font script="Thaa" typeface="MV Boli"/><a:font script="Deva" typeface="Mangal"/><a:font script="Telu" typeface="Gautami"/><a:font script="Taml" typeface="Latha"/><a:font script="Syrc" typeface="Estrangelo Edessa"/><a:font script="Orya" typeface="Kalinga"/><a:font script="Mlym" typeface="Kartika"/><a:font script="Laoo" typeface="DokChampa"/><a:font script="Sinh" typeface="Iskoola Pota"/><a:font script="Mong" typeface="Mongolian Baiti"/><a:font script="Viet" typeface="Times New Roman"/><a:font script="Uigh" typeface="Microsoft Uighur"/><a:font script="Geor" typeface="Sylfaen"/></a:majorFont><a:minorFont><a:latin typeface="Calibri" panose="020F0502020204030204"/><a:ea typeface=""/><a:cs typeface=""/><a:font script="Jpan" typeface="Yu Gothic"/><a:font script="Hang" typeface="맑은 고딕"/><a:font script="Hans" typeface="DengXian"/><a:font script="Hant" typeface="新細明體"/><a:font script="Arab" typeface="Arial"/><a:font script="Hebr" typeface="Arial"/><a:font script="Thai" typeface="Tahoma"/><a:font script="Ethi" typeface="Nyala"/><a:font script="Beng" typeface="Vrinda"/><a:font script="Gujr" typeface="Shruti"/><a:font script="Khmr" typeface="DaunPenh"/><a:font script="Knda" typeface="Tunga"/><a:font script="Guru" typeface="Raavi"/><a:font script="Cans" typeface="Euphemia"/><a:font script="Cher" typeface="Plantagenet Cherokee"/><a:font script="Yiii" typeface="Microsoft Yi Baiti"/><a:font script="Tibt" typeface="Microsoft Himalaya"/><a:font script="Thaa" typeface="MV Boli"/><a:font script="Deva" typeface="Mangal"/><a:font script="Telu" typeface="Gautami"/><a:font script="Taml" typeface="Latha"/><a:font script="Syrc" typeface="Estrangelo Edessa"/><a:font script="Orya" typeface="Kalinga"/><a:font script="Mlym" typeface="Kartika"/><a:font script="Laoo" typeface="DokChampa"/><a:font script="Sinh" typeface="Iskoola Pota"/><a:font script="Mong" typeface="Mongolian Baiti"/><a:font script="Viet" typeface="Arial"/><a:font script="Uigh" typeface="Microsoft Uighur"/><a:font script="Geor" typeface="Sylfaen"/></a:minorFont></a:fontScheme><a:fmtScheme name="Office"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:lumMod val="110000"/><a:satMod val="105000"/><a:tint val="67000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="103000"/><a:tint val="73000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="109000"/><a:tint val="81000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:satMod val="103000"/><a:lumMod val="102000"/><a:tint val="94000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:satMod val="110000"/><a:lumMod val="100000"/><a:shade val="100000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="99000"/><a:satMod val="120000"/><a:shade val="78000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln><a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad="57150" dist="19050" dir="5400000" algn="ctr" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="63000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/><a:satMod val="170000"/></a:schemeClr></a:solidFill><a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="93000"/><a:satMod val="150000"/><a:shade val="98000"/><a:lumMod val="102000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:tint val="98000"/><a:satMod val="130000"/><a:shade val="90000"/><a:lumMod val="103000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="63000"/><a:satMod val="120000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/><a:extLst><a:ext uri="{05A4C25C-085E-4340-85A3-A5531E510DB2}"><thm15:themeFamily xmlns:thm15="http://schemas.microsoft.com/office/thememl/2012/main" name="Office Theme" id="{62F939B6-93AF-4DB8-9C6B-D6C7DFDC589F}" vid="{4A3C46E8-61CC-4603-A589-7422A47A8E4A}"/></a:ext></a:extLst></a:theme>');
+                addExcelFile('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
                     '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="x15" xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main">' +
                     '<fileVersion appName="xl" lastEdited="7" lowestEdited="6" rupBuild="10507"/>' +
                     '<workbookPr/>' +
@@ -2983,7 +2987,7 @@ function createExcelWorksheet(chartObject, zip) {
                     '<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>' +
                     '<calcPr calcId="0" concurrentCalc="0"/>' +
                     '</workbook>\n');
-                zipExcel.file('xl/worksheets/_rels/sheet1.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                addExcelFile('xl/worksheets/_rels/sheet1.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
                     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
                     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>' +
                     '</Relationships>\n');
@@ -3046,7 +3050,7 @@ function createExcelWorksheet(chartObject, zip) {
                 }
                 // DONE:
                 strSharedStrings += '</sst>\n';
-                zipExcel.file('xl/sharedStrings.xml', strSharedStrings);
+                addExcelFile('xl/sharedStrings.xml', strSharedStrings);
             }
             // tables/table1.xml
             {
@@ -3086,7 +3090,7 @@ function createExcelWorksheet(chartObject, zip) {
                 strTableXml += '</tableColumns>';
                 strTableXml += '<tableStyleInfo showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>';
                 strTableXml += '</table>';
-                zipExcel.file('xl/tables/table1.xml', strTableXml);
+                addExcelFile('xl/tables/table1.xml', strTableXml);
             }
             // worksheets/sheet1.xml
             {
@@ -3352,26 +3356,30 @@ function createExcelWorksheet(chartObject, zip) {
                 // ....: Leaving this so nobody foolishly attempts to add this in the future
                 // strSheetXml += '<tableParts count="1"><tablePart r:id="rId1"/></tableParts>'
                 strSheetXml += '</worksheet>\n';
-                zipExcel.file('xl/worksheets/sheet1.xml', strSheetXml);
+                addExcelFile('xl/worksheets/sheet1.xml', strSheetXml);
             }
             // C: Add XLSX to PPTX export
-            zipExcel
-                .generateAsync({ type: 'base64' })
-                .then(content => {
+            try {
+                // Build inner Excel zip
+                const excelZippable = {};
+                for (const [path, data] of Object.entries(excelFiles)) {
+                    excelZippable[path] = [data, { level: 6 }];
+                }
+                const excelZipped = zipSync(excelZippable);
                 // 1: Create the embedded Excel worksheet with labels and data
-                zip.file(`ppt/embeddings/Microsoft_Excel_Worksheet${chartObject.globalId}.xlsx`, content, { base64: true });
+                zip[`ppt/embeddings/Microsoft_Excel_Worksheet${chartObject.globalId}.xlsx`] = excelZipped;
                 // 2: Create the chart.xml and rel files
-                zip.file('ppt/charts/_rels/' + chartObject.fileName + '.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                zip['ppt/charts/_rels/' + chartObject.fileName + '.rels'] = strToU8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
                     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
                     `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/Microsoft_Excel_Worksheet${chartObject.globalId}.xlsx"/>` +
                     '</Relationships>');
-                zip.file(`ppt/charts/${chartObject.fileName}`, makeXmlCharts(chartObject));
+                zip[`ppt/charts/${chartObject.fileName}`] = strToU8(makeXmlCharts(chartObject));
                 // 3: Done
                 resolve('');
-            })
-                .catch(strErr => {
+            }
+            catch (strErr) {
                 reject(strErr);
-            });
+            }
         });
     });
 }
@@ -5475,8 +5483,13 @@ function slideObjectToXml(slide) {
                     }
                     strSlideXml += '</a:avLst></a:prstGeom>';
                 }
-                // Option: FILL
-                strSlideXml += slideItemObj.options.fill ? genXmlColorSelection(slideItemObj.options.fill) : '<a:noFill/>';
+                // Option: FILL (gradient fill takes precedence)
+                if (slideItemObj.options.gradientFill) {
+                    strSlideXml += makeGradientFillXml(slideItemObj.options.gradientFill);
+                }
+                else {
+                    strSlideXml += slideItemObj.options.fill ? genXmlColorSelection(slideItemObj.options.fill) : '<a:noFill/>';
+                }
                 // shape Type: LINE: line color
                 if (slideItemObj.options.line) {
                     strSlideXml += slideItemObj.options.line.width ? `<a:ln w="${valToPts(slideItemObj.options.line.width)}">` : '<a:ln>';
@@ -6485,17 +6498,185 @@ function makeXmlPresentationRels(slides) {
 }
 // XML-GEN: Functions that run 1-N times (once for each Slide)
 /**
+ * Generate transition XML for a slide
+ */
+function makeTransitionXml(transition) {
+    const dur = transition.duration != null ? transition.duration : 1000;
+    const advTm = ` advTm="${dur}"`;
+    const spd = dur <= 500 ? 'fast' : dur >= 1500 ? 'slow' : 'med';
+    switch (transition.type) {
+        case 'fade':
+            return `<p:transition spd="${spd}"${advTm}><p:fade/></p:transition>`;
+        case 'push':
+            return `<p:transition spd="${spd}"${advTm}><p:push dir="${transition.dir || 'r'}"/></p:transition>`;
+        case 'wipe':
+            return `<p:transition spd="${spd}"${advTm}><p:wipe dir="${transition.dir || 'r'}"/></p:transition>`;
+        case 'split':
+            return `<p:transition spd="${spd}"${advTm}><p:split dir="out" orient="horz"/></p:transition>`;
+        case 'reveal':
+            return `<p:transition spd="${spd}"${advTm}><p:reveal dir="${transition.dir || 'r'}"/></p:transition>`;
+        case 'cover':
+            return `<p:transition spd="${spd}"${advTm}><p:cover dir="${transition.dir || 'r'}"/></p:transition>`;
+        case 'zoom':
+            return `<p:transition spd="${spd}"${advTm}><p:zoom dir="out"/></p:transition>`;
+        case 'morph': {
+            const opt = transition.option || 'byObject';
+            const optVal = opt === 'byWord' ? 'words' : opt === 'byChar' ? 'chars' : 'obj';
+            return (`<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">` +
+                `<mc:Choice Requires="p14">` +
+                `<p:transition spd="${spd}"${advTm} xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main">` +
+                `<p14:morph option="${optVal}"/>` +
+                `</p:transition>` +
+                `</mc:Choice>` +
+                `<mc:Fallback>` +
+                `<p:transition spd="${spd}"${advTm}><p:fade/></p:transition>` +
+                `</mc:Fallback>` +
+                `</mc:AlternateContent>`);
+        }
+        default:
+            return '';
+    }
+}
+/**
+ * Animation preset mapping
+ */
+const ANIMATION_PRESETS = {
+    fadeIn: { presetID: 10, presetClass: 'entr', presetSubtype: 0 },
+    fadeOut: { presetID: 10, presetClass: 'exit', presetSubtype: 0 },
+    wipeFromBottom: { presetID: 22, presetClass: 'entr', presetSubtype: 4 },
+    wipeFromTop: { presetID: 22, presetClass: 'entr', presetSubtype: 1 },
+    wipeFromLeft: { presetID: 22, presetClass: 'entr', presetSubtype: 8 },
+    wipeFromRight: { presetID: 22, presetClass: 'entr', presetSubtype: 2 },
+    riseUp: { presetID: 2, presetClass: 'entr', presetSubtype: 4 },
+    flyInFromLeft: { presetID: 2, presetClass: 'entr', presetSubtype: 8 },
+    flyInFromRight: { presetID: 2, presetClass: 'entr', presetSubtype: 2 },
+    pulse: { presetID: 26, presetClass: 'emph', presetSubtype: 0 },
+};
+/**
+ * Generate timing/animation XML for a slide
+ */
+function makeTimingXml(slide) {
+    if (!slide._slideObjects || slide._slideObjects.length === 0)
+        return '';
+    const animatedObjects = slide._slideObjects
+        .map((obj, idx) => ({ obj, idx }))
+        .filter(item => { var _a; return (_a = item.obj.options) === null || _a === void 0 ? void 0 : _a.animation; });
+    if (animatedObjects.length === 0)
+        return '';
+    let strXml = '<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>';
+    // Main sequence container — required for sequential/onClick animations
+    strXml += '<p:seq concurrent="1" nextAc="seek"><p:cTn id="2" dur="indefinite" nodeType="mainSeq"><p:childTnLst>';
+    let tnId = 3;
+    animatedObjects.forEach((item, animIdx) => {
+        var _a, _b;
+        const anim = item.obj.options.animation;
+        const preset = anim.effect === 'buildSequence'
+            ? { presetID: 10, presetClass: 'entr', presetSubtype: 0 }
+            : ANIMATION_PRESETS[anim.effect];
+        if (!preset)
+            return;
+        const dur = (_a = anim.duration) !== null && _a !== void 0 ? _a : 500;
+        const delay = (_b = anim.delay) !== null && _b !== void 0 ? _b : 0;
+        const trigger = anim.trigger || 'onClick';
+        // Shape target is idx+2 (1-based, +1 for the group shape)
+        const spTgt = item.idx + 2;
+        // Each click group is a <p:par> in the mainSeq
+        strXml += '<p:par>';
+        strXml += `<p:cTn id="${tnId++}" fill="hold">`;
+        strXml += '<p:stCondLst>';
+        if (trigger === 'onClick') {
+            strXml += '<p:cond delay="0"/>';
+        }
+        else if (trigger === 'withPrevious') {
+            strXml += `<p:cond delay="${delay}"/>`;
+        }
+        else {
+            // afterPrevious — delay after the previous animation ends
+            strXml += `<p:cond delay="${delay}"/>`;
+        }
+        strXml += '</p:stCondLst>';
+        strXml += '<p:childTnLst>';
+        strXml += '<p:par>';
+        strXml += `<p:cTn id="${tnId++}" presetID="${preset.presetID}" presetClass="${preset.presetClass}" presetSubtype="${preset.presetSubtype}" fill="hold" nodeType="${trigger === 'onClick' ? 'clickEffect' : trigger === 'withPrevious' ? 'withEffect' : 'afterEffect'}">`;
+        strXml += `<p:stCondLst><p:cond delay="${delay}"/></p:stCondLst>`;
+        strXml += '<p:childTnLst>';
+        if (preset.presetClass === 'entr' || preset.presetClass === 'exit') {
+            // Set effect with animEffect
+            strXml += `<p:set><p:cBhvr><p:cTn id="${tnId++}" dur="1" fill="hold"><p:stCondLst><p:cond delay="0"/></p:stCondLst></p:cTn>`;
+            strXml += `<p:tgtEl><p:spTgt spid="${spTgt}"/></p:tgtEl>`;
+            strXml += `<p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr>`;
+            strXml += `<p:to><p:strVal val="visible"/></p:to></p:set>`;
+            strXml += `<p:animEffect transition="${preset.presetClass === 'entr' ? 'in' : 'out'}" filter="fade">`;
+            strXml += `<p:cBhvr><p:cTn id="${tnId++}" dur="${dur}"/>`;
+            strXml += `<p:tgtEl><p:spTgt spid="${spTgt}"/></p:tgtEl></p:cBhvr></p:animEffect>`;
+        }
+        else {
+            // Emphasis (pulse etc.)
+            strXml += `<p:animScale><p:cBhvr><p:cTn id="${tnId++}" dur="${dur}" autoRev="1"/>`;
+            strXml += `<p:tgtEl><p:spTgt spid="${spTgt}"/></p:tgtEl></p:cBhvr>`;
+            strXml += '<p:by x="110000" y="110000"/></p:animScale>';
+        }
+        strXml += '</p:childTnLst>';
+        strXml += '</p:cTn>';
+        strXml += '</p:par>';
+        strXml += '</p:childTnLst>';
+        strXml += '</p:cTn>';
+        strXml += '</p:par>';
+    });
+    strXml += '</p:childTnLst></p:cTn>';
+    // Sequence prev/next conditions
+    strXml += '<p:prevCondLst><p:cond evt="onPrev" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:prevCondLst>';
+    strXml += '<p:nextCondLst><p:cond evt="onNext" delay="0"><p:tgtEl><p:sldTgt/></p:tgtEl></p:cond></p:nextCondLst>';
+    strXml += '</p:seq>';
+    strXml += '</p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>';
+    return strXml;
+}
+/**
+ * Generate gradient fill XML
+ */
+function makeGradientFillXml(gradFill) {
+    let strXml = '<a:gradFill>';
+    strXml += '<a:gsLst>';
+    gradFill.stops.forEach(stop => {
+        const pos = Math.round(stop.position * 1000); // 0-100000
+        strXml += `<a:gs pos="${pos}">`;
+        const transparency = stop.transparency ? `<a:alpha val="${Math.round((100 - stop.transparency) * 1000)}"/>` : '';
+        strXml += createColorElement(stop.color, transparency);
+        strXml += '</a:gs>';
+    });
+    strXml += '</a:gsLst>';
+    if (gradFill.type === 'linear') {
+        const angle = Math.round((gradFill.angle || 0) * 60000);
+        strXml += `<a:lin ang="${angle}" scaled="0"/>`;
+    }
+    else if (gradFill.type === 'radial' || gradFill.type === 'path') {
+        strXml += `<a:path path="${gradFill.type === 'radial' ? 'circle' : 'rect'}"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path>`;
+    }
+    strXml += '</a:gradFill>';
+    return strXml;
+}
+/**
  * Generates XML for the slide file (`ppt/slides/slide1.xml`)
  * @param {PresSlide} slide - the slide object to transform into XML
  * @return {string} XML
  */
 function makeXmlSlide(slide) {
-    return (`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${CRLF}` +
+    let strXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${CRLF}` +
         '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
         'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"' +
         `${(slide === null || slide === void 0 ? void 0 : slide.hidden) ? ' show="0"' : ''}>` +
         `${slideObjectToXml(slide)}` +
-        '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>');
+        '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>';
+    // Add transition XML if present
+    if (slide.transition) {
+        strXml += makeTransitionXml(slide.transition);
+    }
+    // Add timing/animation XML if any objects have animations
+    const animXml = makeTimingXml(slide);
+    if (animXml)
+        strXml += animXml;
+    strXml += '</p:sld>';
+    return strXml;
 }
 /**
  * Get text content of Notes from Slide
@@ -6787,7 +6968,7 @@ function makeXmlViewProps() {
  *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *  SOFTWARE.
  */
-const VERSION = '4.0.1';
+const VERSION = '5.0.0-alpha.1';
 class PptxGenJS {
     set layout(value) {
         const newLayout = this.LAYOUTS[value];
@@ -6945,11 +7126,11 @@ class PptxGenJS {
         /**
          * Create all chart and media rels for this Presentation
          * @param {PresSlide | SlideLayout} slide - slide with rels
-         * @param {JSZip} zip - JSZip instance
+         * @param {Record<string, Uint8Array>} zipData - fflate zip data object
          * @param {Promise<string>[]} chartPromises - promise array
          */
-        this.createChartMediaRels = (slide, zip, chartPromises) => {
-            slide._relsChart.forEach(rel => chartPromises.push(createExcelWorksheet(rel, zip)));
+        this.createChartMediaRels = (slide, zipData, chartPromises) => {
+            slide._relsChart.forEach(rel => chartPromises.push(createExcelWorksheet(rel, zipData)));
             slide._relsMedia.forEach(rel => {
                 if (rel.type !== 'online' && rel.type !== 'hyperlink') {
                     // A: Loop vars
@@ -6962,7 +7143,13 @@ class PptxGenJS {
                     else if (!data.includes(';'))
                         data = 'image/png;' + data;
                     // C: Add media
-                    zip.file(rel.Target.replace('..', 'ppt'), data.split(',').pop(), { base64: true });
+                    const filePath = rel.Target.replace('..', 'ppt');
+                    const base64Data = data.split(',').pop();
+                    const binaryStr = atob(base64Data);
+                    const bytes = new Uint8Array(binaryStr.length);
+                    for (let i = 0; i < binaryStr.length; i++)
+                        bytes[i] = binaryStr.charCodeAt(i);
+                    zipData[filePath] = bytes;
                 }
             });
         };
@@ -7002,7 +7189,11 @@ class PptxGenJS {
         this.exportPresentation = (props) => __awaiter(this, void 0, void 0, function* () {
             const arrChartPromises = [];
             let arrMediaPromises = [];
-            const zip = new JSZip();
+            const zipData = {};
+            /** Helper: add a string as a UTF-8 file entry */
+            const addFile = (path, content) => {
+                zipData[path] = strToU8(content);
+            };
             // STEP 1: Read/Encode all Media before zip as base64 content, etc. is required
             this.slides.forEach(slide => {
                 arrMediaPromises = arrMediaPromises.concat(encodeSlideMediaRels(slide));
@@ -7018,66 +7209,69 @@ class PptxGenJS {
                     if (slide._slideLayout)
                         addPlaceholdersToSlideLayouts(slide);
                 });
-                // B: Add all required folders and files
-                zip.folder('_rels');
-                zip.folder('docProps');
-                zip.folder('ppt').folder('_rels');
-                zip.folder('ppt/charts').folder('_rels');
-                zip.folder('ppt/embeddings');
-                zip.folder('ppt/media');
-                zip.folder('ppt/slideLayouts').folder('_rels');
-                zip.folder('ppt/slideMasters').folder('_rels');
-                zip.folder('ppt/slides').folder('_rels');
-                zip.folder('ppt/theme');
-                zip.folder('ppt/notesMasters').folder('_rels');
-                zip.folder('ppt/notesSlides').folder('_rels');
-                zip.file('[Content_Types].xml', makeXmlContTypes(this.slides, this.slideLayouts, this.masterSlide)); // TODO: pass only `this` like below! 20200206
-                zip.file('_rels/.rels', makeXmlRootRels());
-                zip.file('docProps/app.xml', makeXmlApp(this.slides, this.company)); // TODO: pass only `this` like below! 20200206
-                zip.file('docProps/core.xml', makeXmlCore(this.title, this.subject, this.author, this.revision)); // TODO: pass only `this` like below! 20200206
-                zip.file('ppt/_rels/presentation.xml.rels', makeXmlPresentationRels(this.slides));
-                zip.file('ppt/theme/theme1.xml', makeXmlTheme(this));
-                zip.file('ppt/presentation.xml', makeXmlPresentation(this));
-                zip.file('ppt/presProps.xml', makeXmlPresProps());
-                zip.file('ppt/tableStyles.xml', makeXmlTableStyles());
-                zip.file('ppt/viewProps.xml', makeXmlViewProps());
+                // B: Add all required files (fflate creates folders implicitly from paths)
+                addFile('[Content_Types].xml', makeXmlContTypes(this.slides, this.slideLayouts, this.masterSlide));
+                addFile('_rels/.rels', makeXmlRootRels());
+                addFile('docProps/app.xml', makeXmlApp(this.slides, this.company));
+                addFile('docProps/core.xml', makeXmlCore(this.title, this.subject, this.author, this.revision));
+                addFile('ppt/_rels/presentation.xml.rels', makeXmlPresentationRels(this.slides));
+                addFile('ppt/theme/theme1.xml', makeXmlTheme(this));
+                addFile('ppt/presentation.xml', makeXmlPresentation(this));
+                addFile('ppt/presProps.xml', makeXmlPresProps());
+                addFile('ppt/tableStyles.xml', makeXmlTableStyles());
+                addFile('ppt/viewProps.xml', makeXmlViewProps());
                 // C: Create a Layout/Master/Rel/Slide file for each SlideLayout and Slide
                 this.slideLayouts.forEach((layout, idx) => {
-                    zip.file(`ppt/slideLayouts/slideLayout${idx + 1}.xml`, makeXmlLayout(layout));
-                    zip.file(`ppt/slideLayouts/_rels/slideLayout${idx + 1}.xml.rels`, makeXmlSlideLayoutRel(idx + 1, this.slideLayouts));
+                    addFile(`ppt/slideLayouts/slideLayout${idx + 1}.xml`, makeXmlLayout(layout));
+                    addFile(`ppt/slideLayouts/_rels/slideLayout${idx + 1}.xml.rels`, makeXmlSlideLayoutRel(idx + 1, this.slideLayouts));
                 });
                 this.slides.forEach((slide, idx) => {
-                    zip.file(`ppt/slides/slide${idx + 1}.xml`, makeXmlSlide(slide));
-                    zip.file(`ppt/slides/_rels/slide${idx + 1}.xml.rels`, makeXmlSlideRel(this.slides, this.slideLayouts, idx + 1));
-                    // Create all slide notes related items. Notes of empty strings are created for slides which do not have notes specified, to keep track of _rels.
-                    zip.file(`ppt/notesSlides/notesSlide${idx + 1}.xml`, makeXmlNotesSlide(slide));
-                    zip.file(`ppt/notesSlides/_rels/notesSlide${idx + 1}.xml.rels`, makeXmlNotesSlideRel(idx + 1));
+                    addFile(`ppt/slides/slide${idx + 1}.xml`, makeXmlSlide(slide));
+                    addFile(`ppt/slides/_rels/slide${idx + 1}.xml.rels`, makeXmlSlideRel(this.slides, this.slideLayouts, idx + 1));
+                    addFile(`ppt/notesSlides/notesSlide${idx + 1}.xml`, makeXmlNotesSlide(slide));
+                    addFile(`ppt/notesSlides/_rels/notesSlide${idx + 1}.xml.rels`, makeXmlNotesSlideRel(idx + 1));
                 });
-                zip.file('ppt/slideMasters/slideMaster1.xml', makeXmlMaster(this.masterSlide, this.slideLayouts));
-                zip.file('ppt/slideMasters/_rels/slideMaster1.xml.rels', makeXmlMasterRel(this.masterSlide, this.slideLayouts));
-                zip.file('ppt/notesMasters/notesMaster1.xml', makeXmlNotesMaster());
-                zip.file('ppt/notesMasters/_rels/notesMaster1.xml.rels', makeXmlNotesMasterRel());
+                addFile('ppt/slideMasters/slideMaster1.xml', makeXmlMaster(this.masterSlide, this.slideLayouts));
+                addFile('ppt/slideMasters/_rels/slideMaster1.xml.rels', makeXmlMasterRel(this.masterSlide, this.slideLayouts));
+                addFile('ppt/notesMasters/notesMaster1.xml', makeXmlNotesMaster());
+                addFile('ppt/notesMasters/_rels/notesMaster1.xml.rels', makeXmlNotesMasterRel());
                 // D: Create all Rels (images, media, chart data)
                 this.slideLayouts.forEach(layout => {
-                    this.createChartMediaRels(layout, zip, arrChartPromises);
+                    this.createChartMediaRels(layout, zipData, arrChartPromises);
                 });
                 this.slides.forEach(slide => {
-                    this.createChartMediaRels(slide, zip, arrChartPromises);
+                    this.createChartMediaRels(slide, zipData, arrChartPromises);
                 });
-                this.createChartMediaRels(this.masterSlide, zip, arrChartPromises);
+                this.createChartMediaRels(this.masterSlide, zipData, arrChartPromises);
                 // E: Wait for Promises (if any) then generate the PPTX file
                 return yield Promise.all(arrChartPromises).then(() => __awaiter(this, void 0, void 0, function* () {
-                    if (props.outputType === 'STREAM') {
-                        // A: stream file
-                        return yield zip.generateAsync({ type: 'nodebuffer', compression: props.compression ? 'DEFLATE' : 'STORE' });
+                    // Build Zippable with compression enabled by default
+                    const zippable = {};
+                    for (const [path, data] of Object.entries(zipData)) {
+                        zippable[path] = [data, { level: 6 }];
                     }
-                    else if (props.outputType) {
-                        // B: Node [fs]: Output type user option or default
-                        return yield zip.generateAsync({ type: props.outputType });
+                    const zipped = zipSync(zippable);
+                    if (props.outputType === 'STREAM' || props.outputType === 'nodebuffer') {
+                        return Buffer.from(zipped);
+                    }
+                    else if (props.outputType === 'base64') {
+                        return Buffer.from(zipped).toString('base64');
+                    }
+                    else if (props.outputType === 'arraybuffer') {
+                        return zipped.buffer.slice(zipped.byteOffset, zipped.byteOffset + zipped.byteLength);
+                    }
+                    else if (props.outputType === 'uint8array') {
+                        return zipped;
+                    }
+                    else if (props.outputType === 'binarystring') {
+                        let str = '';
+                        for (let i = 0; i < zipped.length; i++)
+                            str += String.fromCharCode(zipped[i]);
+                        return str;
                     }
                     else {
-                        // C: Browser: Output blob as app/ms-pptx
-                        return yield zip.generateAsync({ type: 'blob', compression: props.compression ? 'DEFLATE' : 'STORE' });
+                        // Default: blob (browser)
+                        return new Blob([zipped], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
                     }
                 }));
             }));
